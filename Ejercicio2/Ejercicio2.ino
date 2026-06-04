@@ -1,4 +1,3 @@
-//Grupo 3: Marco Mallardo, Kenai Jeiman, Ramiro Perekalski, Martin Zonis
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -26,8 +25,7 @@ typedef enum
   RST,
   P1,
   P1AP2,
-  P2,
-  P2AP1
+  P2
 } estados_t;
 estados_t maquinaPantalla;
 
