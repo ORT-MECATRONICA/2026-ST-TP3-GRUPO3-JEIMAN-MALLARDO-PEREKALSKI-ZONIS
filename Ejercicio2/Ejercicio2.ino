@@ -14,6 +14,9 @@
 #define SW2 34
 #define BOTtoken "8657893650:AAFE4LEFG1kVS3-XOd7zaRadOI3auWASIjM"
 #define CHAT_ID "1487922548"
+#define MUTEX_TIMEOUT 1000
+
+SemaphoreHandle_t temperaturaMutex = NULL;
 
 TaskHandle_t Task1;
 TaskHandle_t Task2;
@@ -49,6 +52,14 @@ void setup()
   dht.begin();
   u8g2.begin();
 
+  temperaturaMutex = xSemaphoreCreateMutex();
+  if (temperaturaMutex == NULL) {
+    Serial.println("Failed to create temperatura mutex");
+    while (true) {
+      delay(1000);
+    }
+  }
+
   WiFi.begin(ssid, password);
   client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
   while (WiFi.status() != WL_CONNECTED)
@@ -83,28 +94,20 @@ void setup()
 void Task1code(void *pvParameters)
 {
   bool alertaEnviada = false;
-  long int millisUltimoCheck = millis();
+  float temperaturaTg = 0;
 
   for (;;)
   {
-    if (millis() - millisUltimoCheck >= 5000)
-    { // Leer el sensor cada 5 segundos
-      float temperaturaTest = dht.readTemperature();
-      if (isnan(temperaturaTest))
-      {
-        Serial.println("Lectura DHT fallida");
-      }
-      else
-      {
-        temperatura = temperaturaTest;
-      }
-
-      if (temperatura > valorUmbral)
+    if (xSemaphoreTake(temperaturaMutex, MUTEX_TIMEOUT)) {
+      temperaturaTg = temperatura;
+      xSemaphoreGive(temperaturaMutex);
+    }
+    if (temperaturaTg > valorUmbral)
       {
         digitalWrite(LEDPIN, HIGH);
         if (!alertaEnviada)
         { // Si es la primera vez que lo supera
-          bot.sendMessage(CHAT_ID, "¡Alerta! La temperatura ha superado el umbral: " + String(temperatura) + " °C", "");
+          bot.sendMessage(CHAT_ID, "¡Alerta! La temperatura ha superado el umbral: " + String(temperaturaTg) + " °C", "");
           alertaEnviada = true;
         }
       }
@@ -113,8 +116,7 @@ void Task1code(void *pvParameters)
         digitalWrite(LEDPIN, LOW);
         alertaEnviada = false;
       }
-      millisUltimoCheck = millis();
-    }
+    
 
     // Revisar si hay mensajes nuevos en Telegram
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
@@ -133,7 +135,7 @@ void Task1code(void *pvParameters)
           // Si Marco (SIN "s") envía el comando /temperatura
           if (text == "/temperatura")
           {
-            bot.sendMessage(chat_id, "La temperatura actual es: " + String(temperatura) + " °C", "");
+            bot.sendMessage(chat_id, "La temperatura actual es: " + String(temperaturaTg) + " °C", "");
           }
           // Si envía /start
           else if (text == "/start")
@@ -160,8 +162,27 @@ void Task2code(void *pvParameters)
   int etapa_secuencia = 0;
   unsigned long tiempo_inicio_codigo = 0;
 
+  long int millisUltimoCheck = millis();
+
   for (;;)
   {
+    if (millis() - millisUltimoCheck >= 5000)
+    { // Leer el sensor cada 5 segundos
+      float temperaturaTest = dht.readTemperature();
+      if (isnan(temperaturaTest))
+      {
+        Serial.println("Lectura DHT fallida");
+      }
+      else
+      {
+        if (xSemaphoreTake(temperaturaMutex, MUTEX_TIMEOUT)) {
+          temperatura = temperaturaTest;
+          xSemaphoreGive(temperaturaMutex);
+        }
+      }
+      
+      millisUltimoCheck = millis();
+    }
     Serial.println(etapa_secuencia);
 
     switch (maquinaPantalla)
